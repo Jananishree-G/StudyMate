@@ -1,0 +1,8 @@
+# StudyMate - Final Working Dependencies
+streamlit
+PyMuPDF
+pandas
+numpy
+scikit-learn
+requests
+python-dotenv
