@@ -41,26 +41,33 @@ class HuggingFaceQAEngine:
     def _load_system_prompts(self) -> Dict[str, str]:
         """Load system prompts for different models"""
         return {
-            # Simple prompts for GPT-2 based models
-            "distilgpt2": """Question: {question}
+            # Optimized prompts for FLAN-T5 (instruction-following models)
+            "flan-t5": """Please answer the following question using only the information provided in the context. Be accurate and concise.
 
-Context: {context}
-
-Answer: Based on the provided context,""",
-
-            "gpt2": """Question: {question}
-
-Context: {context}
-
-Answer: According to the documents,""",
-
-            "flan-t5": """Answer the following question based on the context provided.
-
-Context: {context}
+Context from documents:
+{context}
 
 Question: {question}
 
 Answer:""",
+
+            "flan-t5-base": """Please answer the following question using only the information provided in the context. Be accurate and concise.
+
+Context from documents:
+{context}
+
+Question: {question}
+
+Answer:""",
+
+            # Fallback prompts for GPT-2 based models (less accurate)
+            "distilgpt2": """Based on the following information from computer science documents, answer the question accurately.
+
+Information: {context}
+
+Question: {question}
+
+Answer: According to the documents,""",
 
             # Legacy prompts for backward compatibility
             "ibm-granite": """You are StudyMate, an AI academic assistant. You help students understand their study materials by providing clear, accurate answers based on the provided context.
@@ -187,7 +194,7 @@ Answer the student's question using only the information provided in the documen
             # Get the appropriate system prompt
             system_prompt = self.system_prompts.get(
                 self.current_model,
-                self.system_prompts["distilgpt2"]  # Use distilgpt2 as fallback
+                self.system_prompts["flan-t5"]  # Use flan-t5 as fallback
             )
 
             # Format the prompt
@@ -204,7 +211,9 @@ Answer the student's question using only the information provided in the documen
                 **kwargs
             )
 
-            return response
+            # Validate and improve the response
+            validated_response = self._validate_answer(response, question, context)
+            return validated_response
 
         except Exception as e:
             logger.error(f"Answer generation failed: {str(e)}")
@@ -213,6 +222,54 @@ Answer the student's question using only the information provided in the documen
                 return "I apologize, but no AI model is currently loaded. Please try selecting a model from the sidebar and try again."
             else:
                 return f"I apologize, but I encountered an error while generating the answer: {error_msg}"
+
+    def _validate_answer(self, answer: str, question: str, context: str) -> str:
+        """Validate and improve the generated answer"""
+        if not answer or len(answer.strip()) < 10:
+            return self._create_fallback_answer(question, context)
+
+        # Check if the answer seems relevant to the question
+        question_words = set(question.lower().split())
+        answer_words = set(answer.lower().split())
+
+        # Remove common words
+        common_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'what', 'how', 'when', 'where', 'why', 'who'}
+        question_words -= common_words
+        answer_words -= common_words
+
+        # Check for relevance - be more lenient for T5 models
+        if question_words and answer_words:
+            overlap = len(question_words & answer_words) / len(question_words)
+            # More lenient threshold for instruction-tuned models
+            min_overlap = 0.05 if model_manager.current_model_key == "flan-t5" else 0.1
+            if overlap < min_overlap:
+                logger.warning(f"Generated answer seems irrelevant (overlap: {overlap:.2f})")
+                # For T5 models, try to use the answer anyway if it's not completely nonsensical
+                if model_manager.current_model_key == "flan-t5" and len(answer.strip()) > 20:
+                    logger.info("Using T5 answer despite low overlap - instruction-tuned model may be accurate")
+                    return answer
+                return self._create_fallback_answer(question, context)
+
+        # Check for repetitive or nonsensical content
+        words = answer.split()
+        if len(words) > 10:
+            unique_words = set(words)
+            if len(unique_words) / len(words) < 0.3:  # Less than 30% unique words
+                logger.warning("Generated answer is too repetitive")
+                return self._create_fallback_answer(question, context)
+
+        return answer
+
+    def _create_fallback_answer(self, question: str, context: str) -> str:
+        """Create a fallback answer when AI generation fails"""
+        # Extract key information from context
+        context_sentences = context.split('.')[:3]  # First 3 sentences
+        relevant_info = '. '.join(sentence.strip() for sentence in context_sentences if sentence.strip())
+
+        if relevant_info:
+            return f"Based on the available information: {relevant_info}. Please refer to the source documents for more detailed information."
+        else:
+            return "I found some relevant information in your documents, but I'm having difficulty generating a clear answer. Please try rephrasing your question or refer to the source documents directly."
     
     def ask_question(self, question: str, **kwargs) -> Dict[str, Any]:
         """Complete Q&A pipeline: search + generate answer"""

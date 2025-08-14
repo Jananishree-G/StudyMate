@@ -107,17 +107,37 @@ class AdvancedGraniteModelManager:
             if quantization_config:
                 model_kwargs["quantization_config"] = quantization_config
             
-            self.current_model = AutoModelForCausalLM.from_pretrained(
-                model_id,
-                **model_kwargs
-            )
-            
-            # Create generation pipeline
-            self.generation_pipeline = pipeline(
-                "text-generation",
-                model=self.current_model,
-                tokenizer=self.current_tokenizer,
-                device=0 if self.device == "cuda" else -1,
+            # Determine model type and load accordingly
+            model_type = model_config.get("type", "causal")
+
+            if model_type == "text2text":
+                # For T5-based models (text-to-text generation)
+                from transformers import AutoModelForSeq2SeqLM
+                self.current_model = AutoModelForSeq2SeqLM.from_pretrained(
+                    model_id,
+                    **model_kwargs
+                )
+
+                # Create text2text generation pipeline
+                self.generation_pipeline = pipeline(
+                    "text2text-generation",
+                    model=self.current_model,
+                    tokenizer=self.current_tokenizer,
+                    device=0 if self.device == "cuda" else -1,
+                )
+            else:
+                # For GPT-based models (causal language modeling)
+                self.current_model = AutoModelForCausalLM.from_pretrained(
+                    model_id,
+                    **model_kwargs
+                )
+
+                # Create text generation pipeline
+                self.generation_pipeline = pipeline(
+                    "text-generation",
+                    model=self.current_model,
+                    tokenizer=self.current_tokenizer,
+                    device=0 if self.device == "cuda" else -1,
                 torch_dtype=torch.float16 if self.device != "cpu" else torch.float32
             )
             
@@ -160,28 +180,68 @@ class AdvancedGraniteModelManager:
             
             # Get model configuration
             model_config = config.get_model_config(self.current_model_key)
+            model_type = model_config.get("type", "causal")
+
+            # Set generation parameters based on model type
+            if model_type == "text2text":
+                # For T5-based models - simpler parameters
+                generation_kwargs = {
+                    "max_new_tokens": kwargs.get("max_new_tokens", 100),
+                    "temperature": kwargs.get("temperature", model_config.get("temperature", 0.3)),
+                    "do_sample": True,
+                    "top_p": 0.9,
+                    "num_return_sequences": 1
+                }
+            else:
+                # For GPT-based models - anti-repetition parameters
+                generation_kwargs = {
+                    "max_new_tokens": kwargs.get("max_new_tokens", 150),
+                    "temperature": kwargs.get("temperature", 0.8),
+                    "top_p": kwargs.get("top_p", 0.9),
+                    "top_k": kwargs.get("top_k", 50),
+                    "do_sample": True,
+                    "pad_token_id": self.current_tokenizer.eos_token_id,
+                    "eos_token_id": self.current_tokenizer.eos_token_id,
+                    "return_full_text": True,
+                    "num_return_sequences": 1,
+                    "repetition_penalty": 1.2,
+                    "no_repeat_ngram_size": 3,
+                    "early_stopping": True
+                }
             
-            # Set generation parameters to prevent repetition
-            generation_kwargs = {
-                "max_new_tokens": kwargs.get("max_new_tokens", 150),  # Limit response length
-                "temperature": kwargs.get("temperature", 0.8),  # Higher temperature for variety
-                "top_p": kwargs.get("top_p", 0.9),  # Nucleus sampling
-                "top_k": kwargs.get("top_k", 50),  # Top-k sampling
-                "do_sample": True,  # Enable sampling
-                "pad_token_id": self.current_tokenizer.eos_token_id,
-                "eos_token_id": self.current_tokenizer.eos_token_id,
-                "return_full_text": True,
-                "num_return_sequences": 1,
-                "repetition_penalty": 1.2,  # Penalize repetition
-                "no_repeat_ngram_size": 3,  # Prevent 3-gram repetition
-                "early_stopping": True  # Stop at natural ending
-            }
-            
-            # Truncate prompt if too long to avoid model limits
-            max_prompt_length = model_config.get("max_length", 1024) - generation_kwargs.get("max_new_tokens", 100)
-            if len(prompt) > max_prompt_length:
-                prompt = prompt[:max_prompt_length] + "..."
-                logger.warning(f"Prompt truncated to {max_prompt_length} characters")
+            # Handle prompt length based on model type
+            if model_type == "text2text":
+                # T5 models can handle longer sequences, use more generous limits
+                max_prompt_length = 1800  # Allow longer prompts for better context
+                max_new_tokens = generation_kwargs.get("max_new_tokens", 100)
+
+                # Ensure we don't exceed model's total capacity
+                if len(prompt) + max_new_tokens > 2048:
+                    max_prompt_length = 2048 - max_new_tokens
+
+                if len(prompt) > max_prompt_length:
+                    # Truncate from the beginning to keep the question and recent context
+                    prompt_parts = prompt.split("Question:")
+                    if len(prompt_parts) == 2:
+                        context_part = prompt_parts[0]
+                        question_part = "Question:" + prompt_parts[1]
+
+                        # Keep the question and truncate context if needed
+                        available_for_context = max_prompt_length - len(question_part)
+                        if len(context_part) > available_for_context:
+                            context_part = "..." + context_part[-available_for_context:]
+
+                        prompt = context_part + question_part
+                    else:
+                        prompt = prompt[:max_prompt_length] + "..."
+
+                    logger.warning(f"Prompt truncated to {len(prompt)} characters for T5 model")
+            else:
+                # GPT models - use original logic
+                max_prompt_length = model_config.get("max_length", 1024) - generation_kwargs.get("max_new_tokens", 100)
+                if len(prompt) > max_prompt_length:
+                    prompt = prompt[:max_prompt_length] + "..."
+                    logger.warning(f"Prompt truncated to {max_prompt_length} characters")
 
             # Generate text
             result = self.generation_pipeline(
@@ -190,20 +250,24 @@ class AdvancedGraniteModelManager:
             )
             
             if result and len(result) > 0:
-                generated_text = result[0]["generated_text"]
-
-                # If return_full_text=True, extract only the new part
-                if generated_text.startswith(prompt):
-                    new_text = generated_text[len(prompt):].strip()
-                    if new_text:
-                        # Clean up the response
-                        new_text = self._clean_generated_text(new_text)
-                        return new_text
-                    else:
-                        # If no new text, return the full response
-                        return self._clean_generated_text(generated_text.strip())
+                # Handle different response formats based on model type
+                if model_type == "text2text":
+                    # T5 models return direct answers
+                    generated_text = result[0]["generated_text"].strip()
+                    return self._clean_generated_text(generated_text)
                 else:
-                    return self._clean_generated_text(generated_text.strip())
+                    # GPT models return full text including prompt
+                    generated_text = result[0]["generated_text"]
+
+                    # Extract only the new part after the prompt
+                    if generated_text.startswith(prompt):
+                        new_text = generated_text[len(prompt):].strip()
+                        if new_text:
+                            return self._clean_generated_text(new_text)
+                        else:
+                            return self._clean_generated_text(generated_text.strip())
+                    else:
+                        return self._clean_generated_text(generated_text.strip())
             else:
                 return "I apologize, but I couldn't generate a response. Please try again."
                 

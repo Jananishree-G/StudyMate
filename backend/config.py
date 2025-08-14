@@ -34,31 +34,34 @@ class Config:
 
     # Available Models
     AVAILABLE_MODELS = {
-        "gpt2": {
-            "name": "GPT-2 Medium",
-            "model_id": "gpt2-medium",
-            "description": "OpenAI's GPT-2 model - reliable and fast for text generation",
-            "max_length": 1024,
-            "temperature": 0.7
+        "flan-t5": {
+            "name": "FLAN-T5 Small",
+            "model_id": "google/flan-t5-small",
+            "description": "Google's instruction-tuned T5 model - best for accurate Q&A",
+            "max_length": 512,
+            "temperature": 0.3,
+            "type": "text2text"
+        },
+        "flan-t5-base": {
+            "name": "FLAN-T5 Base",
+            "model_id": "google/flan-t5-base",
+            "description": "Larger FLAN-T5 model - more accurate but slower",
+            "max_length": 512,
+            "temperature": 0.3,
+            "type": "text2text"
         },
         "distilgpt2": {
             "name": "DistilGPT-2",
             "model_id": "distilgpt2",
-            "description": "Lightweight version of GPT-2 - faster inference",
+            "description": "Lightweight GPT-2 - fast but less accurate for Q&A",
             "max_length": 1024,
-            "temperature": 0.7
-        },
-        "flan-t5": {
-            "name": "FLAN-T5 Small",
-            "model_id": "google/flan-t5-small",
-            "description": "Google's instruction-tuned T5 model - good for Q&A",
-            "max_length": 512,
-            "temperature": 0.7
+            "temperature": 0.7,
+            "type": "causal"
         }
     }
 
-    # Default model
-    DEFAULT_MODEL = "distilgpt2"
+    # Default model - use FLAN-T5 for better Q&A accuracy
+    DEFAULT_MODEL = "flan-t5"
 
     # Embedding Model Configuration
     EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
