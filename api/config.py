@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import List, Optional
 from pydantic_settings import BaseSettings
-from pydantic import Field, validator
+from pydantic import Field, validator, ConfigDict
 import secrets
 
 class Settings(BaseSettings):
@@ -118,13 +118,13 @@ class Settings(BaseSettings):
     default_top_k: int = Field(default=50, env="DEFAULT_TOP_K")
     
     # Directory Configuration
-    base_dir: Path = Field(default=Path(__file__).parent.parent)
-    data_dir: Path = Field(default=None)
-    upload_dir: Path = Field(default=None)
-    processed_dir: Path = Field(default=None)
-    embeddings_dir: Path = Field(default=None)
-    models_dir: Path = Field(default=None)
-    logs_dir: Path = Field(default=None)
+    base_dir: Path = Field(default_factory=lambda: Path(__file__).parent.parent)
+    data_dir: Optional[Path] = Field(default=None)
+    upload_dir: Optional[Path] = Field(default=None)
+    processed_dir: Optional[Path] = Field(default=None)
+    embeddings_dir: Optional[Path] = Field(default=None)
+    models_dir: Optional[Path] = Field(default=None)
+    logs_dir: Optional[Path] = Field(default=None)
     
     # Logging Configuration
     log_level: str = Field(default="INFO", env="LOG_LEVEL")
@@ -197,10 +197,12 @@ class Settings(BaseSettings):
             return self.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
         return self.database_url
     
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore"  # Ignore extra fields from .env
+    )
 
 # Global settings instance
 settings = Settings()

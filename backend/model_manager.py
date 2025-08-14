@@ -22,12 +22,8 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 import threading
 
-# Import API config if available, fallback to backend config
-try:
-    from api.config import settings as config
-    logger = logging.getLogger(__name__)
-except ImportError:
-    from .config import config, logger
+# Import backend config (temporarily disable API config due to validation issues)
+from .config import config, logger
 
 class AdvancedGraniteModelManager:
     """Advanced IBM Granite Model Manager with API integration"""
@@ -35,23 +31,16 @@ class AdvancedGraniteModelManager:
     def __init__(self):
         self.loaded_models = {}  # Cache for multiple models
         self.current_model_key = None
+        self.current_model = None
+        self.current_tokenizer = None
+        self.generation_pipeline = None
         self.embedding_model = None
         self.device = self._get_device()
         self.executor = ThreadPoolExecutor(max_workers=2)
         self.model_lock = threading.Lock()
 
-        # Model configurations
-        self.granite_configs = getattr(config, 'granite_models', {
-            "granite-3b-code-instruct": {
-                "model_id": "ibm-granite/granite-3b-code-instruct",
-                "name": "IBM Granite 3B Code Instruct",
-                "description": "IBM's Granite model optimized for code and instruction following",
-                "max_length": 2048,
-                "temperature": 0.7,
-                "top_p": 0.9,
-                "top_k": 50
-            }
-        })
+        # Model configurations - use available models from config
+        self.granite_configs = config.AVAILABLE_MODELS
 
         logger.info(f"Advanced Granite ModelManager initialized with device: {self.device}")
         logger.info(f"Available Granite models: {list(self.granite_configs.keys())}")
@@ -289,4 +278,4 @@ class AdvancedGraniteModelManager:
         logger.info("Model cleanup completed")
 
 # Global model manager instance
-model_manager = ModelManager()
+model_manager = AdvancedGraniteModelManager()
