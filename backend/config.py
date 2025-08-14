@@ -34,31 +34,31 @@ class Config:
 
     # Available Models
     AVAILABLE_MODELS = {
-        "ibm-granite": {
-            "name": "IBM Granite 3B",
-            "model_id": "ibm-granite/granite-3b-code-instruct",
-            "description": "IBM's Granite model optimized for code and instruction following",
-            "max_length": 2048,
+        "gpt2": {
+            "name": "GPT-2 Medium",
+            "model_id": "gpt2-medium",
+            "description": "OpenAI's GPT-2 model - reliable and fast for text generation",
+            "max_length": 1024,
             "temperature": 0.7
         },
-        "mistral": {
-            "name": "Mistral 7B Instruct",
-            "model_id": "mistralai/Mistral-7B-Instruct-v0.2",
-            "description": "Mistral's instruction-tuned model for general tasks",
-            "max_length": 4096,
+        "distilgpt2": {
+            "name": "DistilGPT-2",
+            "model_id": "distilgpt2",
+            "description": "Lightweight version of GPT-2 - faster inference",
+            "max_length": 1024,
             "temperature": 0.7
         },
-        "granite-code": {
-            "name": "IBM Granite Code",
-            "model_id": "ibm-granite/granite-8b-code-instruct",
-            "description": "IBM Granite model specialized for code understanding",
-            "max_length": 2048,
-            "temperature": 0.5
+        "flan-t5": {
+            "name": "FLAN-T5 Small",
+            "model_id": "google/flan-t5-small",
+            "description": "Google's instruction-tuned T5 model - good for Q&A",
+            "max_length": 512,
+            "temperature": 0.7
         }
     }
 
     # Default model
-    DEFAULT_MODEL = "mistral"
+    DEFAULT_MODEL = "distilgpt2"
 
     # Embedding Model Configuration
     EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"

@@ -6,6 +6,8 @@ Clean, modern interface for document Q&A
 import streamlit as st
 import sys
 from pathlib import Path
+import json
+import time
 
 # Add paths
 sys.path.append(str(Path(__file__).parent / "backend"))
@@ -14,8 +16,8 @@ sys.path.append(str(Path(__file__).parent / "frontend"))
 from backend.manager import StudyMateBackend
 from frontend.styles import get_custom_css
 from backend.config import config
-import json
-import time
+
+# Authentication functions removed - Direct access to StudyMate
 
 def initialize_session_state():
     """Initialize session state variables"""
@@ -1191,7 +1193,13 @@ def render_settings_page():
     """, unsafe_allow_html=True)
 
 def main():
-    """Main application function"""
+    """Main application function - Direct access without authentication"""
+    st.set_page_config(
+        page_title="StudyMate - AI Academic Assistant",
+        page_icon="📚",
+        layout="wide"
+    )
+
     # Apply custom CSS
     st.markdown(get_custom_css(), unsafe_allow_html=True)
 

@@ -264,9 +264,9 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 async def startup_event():
     """Initialize database on startup"""
     init_database()
-    print("✅ StudyMate API started successfully")
-    print("📊 Database initialized")
-    print("🔐 Authentication system ready")
+    print("StudyMate API started successfully")
+    print("Database initialized")
+    print("Authentication system ready")
 
 @app.get("/")
 async def root():

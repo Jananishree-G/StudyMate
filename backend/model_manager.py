@@ -161,17 +161,28 @@ class AdvancedGraniteModelManager:
             # Get model configuration
             model_config = config.get_model_config(self.current_model_key)
             
-            # Set generation parameters
+            # Set generation parameters to prevent repetition
             generation_kwargs = {
-                "max_new_tokens": kwargs.get("max_new_tokens", config.MAX_NEW_TOKENS),
-                "temperature": kwargs.get("temperature", model_config.get("temperature", config.TEMPERATURE)),
-                "top_p": kwargs.get("top_p", config.TOP_P),
-                "top_k": kwargs.get("top_k", config.TOP_K),
-                "do_sample": kwargs.get("do_sample", config.DO_SAMPLE),
+                "max_new_tokens": kwargs.get("max_new_tokens", 150),  # Limit response length
+                "temperature": kwargs.get("temperature", 0.8),  # Higher temperature for variety
+                "top_p": kwargs.get("top_p", 0.9),  # Nucleus sampling
+                "top_k": kwargs.get("top_k", 50),  # Top-k sampling
+                "do_sample": True,  # Enable sampling
                 "pad_token_id": self.current_tokenizer.eos_token_id,
-                "return_full_text": False
+                "eos_token_id": self.current_tokenizer.eos_token_id,
+                "return_full_text": True,
+                "num_return_sequences": 1,
+                "repetition_penalty": 1.2,  # Penalize repetition
+                "no_repeat_ngram_size": 3,  # Prevent 3-gram repetition
+                "early_stopping": True  # Stop at natural ending
             }
             
+            # Truncate prompt if too long to avoid model limits
+            max_prompt_length = model_config.get("max_length", 1024) - generation_kwargs.get("max_new_tokens", 100)
+            if len(prompt) > max_prompt_length:
+                prompt = prompt[:max_prompt_length] + "..."
+                logger.warning(f"Prompt truncated to {max_prompt_length} characters")
+
             # Generate text
             result = self.generation_pipeline(
                 prompt,
@@ -180,13 +191,58 @@ class AdvancedGraniteModelManager:
             
             if result and len(result) > 0:
                 generated_text = result[0]["generated_text"]
-                return generated_text.strip()
+
+                # If return_full_text=True, extract only the new part
+                if generated_text.startswith(prompt):
+                    new_text = generated_text[len(prompt):].strip()
+                    if new_text:
+                        # Clean up the response
+                        new_text = self._clean_generated_text(new_text)
+                        return new_text
+                    else:
+                        # If no new text, return the full response
+                        return self._clean_generated_text(generated_text.strip())
+                else:
+                    return self._clean_generated_text(generated_text.strip())
             else:
                 return "I apologize, but I couldn't generate a response. Please try again."
                 
         except Exception as e:
             logger.error(f"Text generation failed: {str(e)}")
             return f"Error generating response: {str(e)}"
+
+    def _clean_generated_text(self, text: str) -> str:
+        """Clean up generated text to remove repetition and improve quality"""
+        if not text:
+            return text
+
+        # Split into sentences
+        sentences = text.split('.')
+        cleaned_sentences = []
+        seen_sentences = set()
+
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if sentence and sentence not in seen_sentences and len(sentence) > 10:
+                # Check for repetitive patterns
+                words = sentence.split()
+                if len(words) > 3:  # Only process sentences with enough words
+                    # Remove if it's mostly repetitive
+                    unique_words = set(words)
+                    if len(unique_words) / len(words) > 0.3:  # At least 30% unique words
+                        cleaned_sentences.append(sentence)
+                        seen_sentences.add(sentence)
+
+        # Join sentences back
+        result = '. '.join(cleaned_sentences)
+        if result and not result.endswith('.'):
+            result += '.'
+
+        # Limit length to prevent overly long responses
+        if len(result) > 500:
+            result = result[:500] + "..."
+
+        return result if result else "I apologize, but I couldn't generate a clear response. Please try rephrasing your question."
     
     def create_embeddings(self, texts: List[str]) -> Optional[torch.Tensor]:
         """Create embeddings for a list of texts"""

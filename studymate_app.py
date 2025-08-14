@@ -95,6 +95,8 @@ if 'selected_document' not in st.session_state:
     st.session_state.selected_document = None
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = "📄 Document Management"
 
 # API helper functions
 def make_api_request(endpoint: str, method: str = "GET", data: Dict = None, files: Dict = None, auth: bool = True):
@@ -170,6 +172,7 @@ def logout_user():
     st.session_state.documents = []
     st.session_state.selected_document = None
     st.session_state.chat_history = []
+    st.session_state.current_page = "📄 Document Management"
 
 def check_session_timeout():
     """Check if user session has timed out"""
@@ -321,20 +324,25 @@ def show_main_app():
             "💬 Chat with Documents",
             "📊 Dashboard",
             "⚙️ Settings"
-        ])
+        ], index=["📄 Document Management", "💬 Chat with Documents", "📊 Dashboard", "⚙️ Settings"].index(st.session_state.current_page) if st.session_state.current_page in ["📄 Document Management", "💬 Chat with Documents", "📊 Dashboard", "⚙️ Settings"] else 0)
+
+        # Update current page when selection changes
+        if page != st.session_state.current_page:
+            st.session_state.current_page = page
+            st.rerun()
     
     # Load documents if not loaded
     if not st.session_state.documents:
         load_user_documents()
     
     # Page routing
-    if page == "📄 Document Management":
+    if st.session_state.current_page == "📄 Document Management":
         show_document_management()
-    elif page == "💬 Chat with Documents":
+    elif st.session_state.current_page == "💬 Chat with Documents":
         show_chat_interface()
-    elif page == "📊 Dashboard":
+    elif st.session_state.current_page == "📊 Dashboard":
         show_dashboard()
-    elif page == "⚙️ Settings":
+    elif st.session_state.current_page == "⚙️ Settings":
         show_settings()
 
 def show_document_management():
@@ -389,7 +397,8 @@ def show_document_management():
                 with col4:
                     if st.button("💬 Chat", key=f"chat_{doc['id']}", use_container_width=True):
                         st.session_state.selected_document = doc
-                        st.switch_page("💬 Chat with Documents")
+                        st.session_state.current_page = "💬 Chat with Documents"
+                        st.rerun()
                 
                 st.markdown('</div>', unsafe_allow_html=True)
     else:

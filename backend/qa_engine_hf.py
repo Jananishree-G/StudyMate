@@ -16,10 +16,53 @@ class HuggingFaceQAEngine:
         self.conversation_history = []
         self.current_model = config.DEFAULT_MODEL
         self.system_prompts = self._load_system_prompts()
+
+        # Load default model during initialization
+        logger.info(f"Initializing QA engine with default model: {self.current_model}")
+        try:
+            if not model_manager.load_generation_model(self.current_model):
+                logger.warning(f"Failed to load default model {self.current_model}, trying fallback models...")
+                # Try fallback models
+                for fallback_model in ['mistral', 'ibm-granite']:
+                    if fallback_model != self.current_model and fallback_model in config.AVAILABLE_MODELS:
+                        logger.info(f"Trying fallback model: {fallback_model}")
+                        if model_manager.load_generation_model(fallback_model):
+                            self.current_model = fallback_model
+                            logger.info(f"Successfully loaded fallback model: {fallback_model}")
+                            break
+                else:
+                    logger.error("Failed to load any generation model - Q&A will not work properly")
+            else:
+                logger.info(f"Successfully loaded default model: {self.current_model}")
+        except Exception as e:
+            logger.error(f"Error during model initialization: {str(e)}")
+            logger.warning("Q&A engine initialized without generation model - use set_model() to load one")
         
     def _load_system_prompts(self) -> Dict[str, str]:
         """Load system prompts for different models"""
         return {
+            # Simple prompts for GPT-2 based models
+            "distilgpt2": """Question: {question}
+
+Context: {context}
+
+Answer: Based on the provided context,""",
+
+            "gpt2": """Question: {question}
+
+Context: {context}
+
+Answer: According to the documents,""",
+
+            "flan-t5": """Answer the following question based on the context provided.
+
+Context: {context}
+
+Question: {question}
+
+Answer:""",
+
+            # Legacy prompts for backward compatibility
             "ibm-granite": """You are StudyMate, an AI academic assistant. You help students understand their study materials by providing clear, accurate answers based on the provided context.
 
 Instructions:
@@ -35,7 +78,7 @@ Context: {context}
 Question: {question}
 
 Answer:""",
-            
+
             "mistral": """<s>[INST] You are StudyMate, an intelligent academic assistant. Your role is to help students understand their study materials by providing accurate, helpful answers based on the provided document context.
 
 Guidelines:
@@ -128,34 +171,48 @@ Answer the student's question using only the information provided in the documen
         
         return "\n---\n".join(context_parts)
     
+    def is_model_loaded(self) -> bool:
+        """Check if a generation model is currently loaded"""
+        return model_manager.generation_pipeline is not None
+
     def generate_answer(self, question: str, context: str, **kwargs) -> str:
         """Generate answer using the current HuggingFace model"""
         try:
+            # Check if model is loaded
+            if not self.is_model_loaded():
+                logger.warning("No generation model loaded, attempting to load default model...")
+                if not self.set_model(self.current_model):
+                    return "I apologize, but no AI model is currently loaded. Please try selecting a model from the sidebar or contact support."
+
             # Get the appropriate system prompt
             system_prompt = self.system_prompts.get(
-                self.current_model, 
-                self.system_prompts["mistral"]
+                self.current_model,
+                self.system_prompts["distilgpt2"]  # Use distilgpt2 as fallback
             )
-            
+
             # Format the prompt
             formatted_prompt = system_prompt.format(
                 context=context,
                 question=question
             )
-            
+
             # Generate response
             logger.info(f"Generating answer using model: {self.current_model}")
-            
+
             response = model_manager.generate_text(
                 formatted_prompt,
                 **kwargs
             )
-            
+
             return response
-            
+
         except Exception as e:
             logger.error(f"Answer generation failed: {str(e)}")
-            return f"I apologize, but I encountered an error while generating the answer: {str(e)}"
+            error_msg = str(e)
+            if "No generation model loaded" in error_msg:
+                return "I apologize, but no AI model is currently loaded. Please try selecting a model from the sidebar and try again."
+            else:
+                return f"I apologize, but I encountered an error while generating the answer: {error_msg}"
     
     def ask_question(self, question: str, **kwargs) -> Dict[str, Any]:
         """Complete Q&A pipeline: search + generate answer"""

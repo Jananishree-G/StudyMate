@@ -46,36 +46,62 @@ class PDFProcessor:
                 logger.info(f"Using cached version of {pdf_path.name}")
                 return self.processed_files[file_hash]
 
-            doc = fitz.open(pdf_path)
+            # Open document with error handling
+            doc = None
+            try:
+                doc = fitz.open(pdf_path)
+                logger.info(f"Successfully opened PDF: {pdf_path.name}")
 
-            # Extract text from all pages
-            full_text = ""
-            pages_text = []
-            total_chars = 0
+                # Store document info before processing
+                total_pages = len(doc)
+                logger.info(f"PDF has {total_pages} pages")
 
-            for page_num in range(len(doc)):
-                try:
-                    page = doc.load_page(page_num)
-                    page_text = page.get_text()
+                # Extract text from all pages
+                full_text = ""
+                pages_text = []
+                total_chars = 0
 
-                    if page_text.strip():
-                        cleaned_text = self.clean_text(page_text)
-                        if cleaned_text:  # Only add non-empty pages
-                            page_info = {
-                                'page_number': page_num + 1,
-                                'text': cleaned_text,
-                                'word_count': len(cleaned_text.split()),
-                                'char_count': len(cleaned_text)
-                            }
-                            pages_text.append(page_info)
-                            full_text += cleaned_text + " "
-                            total_chars += len(cleaned_text)
+                for page_num in range(total_pages):
+                    try:
+                        page = doc.load_page(page_num)
+                        page_text = page.get_text()
 
-                except Exception as e:
-                    logger.warning(f"Error processing page {page_num + 1} of {pdf_path.name}: {e}")
-                    continue
+                        if page_text.strip():
+                            cleaned_text = self.clean_text(page_text)
+                            if cleaned_text:  # Only add non-empty pages
+                                page_info = {
+                                    'page_number': page_num + 1,
+                                    'text': cleaned_text,
+                                    'word_count': len(cleaned_text.split()),
+                                    'char_count': len(cleaned_text)
+                                }
+                                pages_text.append(page_info)
+                                full_text += cleaned_text + " "
+                                total_chars += len(cleaned_text)
 
-            doc.close()
+                    except Exception as e:
+                        logger.warning(f"Error processing page {page_num + 1} of {pdf_path.name}: {e}")
+                        continue
+
+                logger.info(f"Extracted text from {len(pages_text)} pages with text out of {total_pages} total pages")
+
+            except Exception as e:
+                logger.error(f"Error opening or processing PDF {pdf_path.name}: {e}")
+                if doc:
+                    try:
+                        doc.close()
+                    except:
+                        pass
+                raise Exception(f"Failed to process PDF: {str(e)}")
+
+            finally:
+                # Ensure document is always closed
+                if doc:
+                    try:
+                        doc.close()
+                        logger.info(f"Successfully closed PDF: {pdf_path.name}")
+                    except Exception as e:
+                        logger.warning(f"Error closing PDF {pdf_path.name}: {e}")
 
             # Create comprehensive metadata
             metadata = {
@@ -83,7 +109,7 @@ class PDFProcessor:
                 'file_path': str(pdf_path),
                 'file_hash': file_hash,
                 'file_size': pdf_path.stat().st_size,
-                'total_pages': len(doc),
+                'total_pages': total_pages,
                 'pages_with_text': len(pages_text),
                 'total_words': len(full_text.split()),
                 'total_characters': total_chars,
